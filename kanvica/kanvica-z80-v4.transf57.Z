@@ -1,0 +1,1630 @@
+               DUMP  27,6
+               DW    start
+               ORG   &4600
+               DUMP  28,&600
+
+start:         LD    A,240          ; Define main scr.
+               RST   &28
+               DB    COLOR
+               XOR   A             ; Border 0
+               LD    (BORDER),A
+               RST   &28
+               DB    CLS
+               RST   &28
+               DB    MODE3
+               LD    BC,0
+               LD    DE,&4010
+               CALL  SET.WINDOW    ; For 64 rows in line
+               CALL  TEXT
+               DB    22,0,53
+               DM    "F9-EXIT"
+               DB    22,1,53
+               DM    "F8-MENU"
+               DB    22,2,53
+               DM    "F7-RING"
+               DB    22,3,53
+               DM    "F6-PL. WAIT"
+               DB    22,4,53
+               DM    "F5-MESSAGE"
+               DB    22,5,53
+               DM    "F4-GAME"
+               DB    22,15,1
+               DM    "KNV 3.0  1996 BY MANIAC SYSTEM CORPORATION"
+;               DB    22,7,0
+;               DM    "CONNECTION:"
+               DB    255
+               IN    A,(252)       ; Unblock MIDI
+               RES   7,A
+               OUT   (252),A
+               XOR   A             ;201  ; Unblock Interrupt vectors - for better MIDI service (no errors)
+               LD    (INTERRUPT),A
+               LD    A,255         ; Set screen saver to 21 minutes (maximum)
+               RST   &28
+               DB    SET.TIME
+               EI                  ; Every time the same start
+               HALT
+               DI
+
+;***************************************************************
+;***********        ONLINE COMMUNICATION     *******************
+;*********** KANVICA 4.0 - ~ : get file      *******************
+;***********               _ : send file     *******************
+;***********            EDIT : ring          *******************
+;***********             INV : exit          *******************
+;***************************************************************
+               IN    A,(port)      ; IN = old
+               LD    (old_st),A
+               LD    A,255         ; Stop enemy ringing
+               OUT   (port2),A
+               CALL  cakaj_2
+               XOR   A
+               OUT   (port2),A
+               LD    HL,&0101      ; Other settings...
+               LD    (samy),HL
+               LD    HL,&0109
+               LD    (atariy),HL
+               CALL  sam_window
+               CALL  st_window
+               LD    A,com_win
+               RST   &28
+               DB    COLOR
+               CALL  sam_kurzor    ; Initialize curzors
+               CALL  st_kurzor
+
+;               LD    A,2             ; ATARI off line
+;               LD    (online_act),A
+
+;               LD    HL,samonline
+;               CALL  message_2
+
+main_loop:     CALL  inkey2        ; ***
+               CALL  read_st       ;
+               CALL  show_sam      ;     MAIN LOOP
+                                   ;     ~~~~~~~~~
+               JP    main_loop     ; ***
+
+;///////////////////////////////////////////////////////////////
+;///////////////// Show char from key_buffer ///////////////////
+;///////////////////////////////////////////////////////////////
+show_sam:      LD    A,(key_buffer)
+               CP    0
+               RET   Z             ; ****
+
+               LD    E,A
+               LD    HL,(samy)     ; Delete kurzor
+               RST   &28
+               DB    AT
+               LD    A," "
+               RST   &10
+
+               LD    A,(old_sam)
+               XOR   E
+               JP    NZ,nerovnake
+               LD    A,128         ; For sam <-> sam ver.
+               OUT   (port2),A      ; --------------------
+            ;   CALL  cakaj_2
+
+nerovnake:     LD    A,E
+               LD    (old_sam),A
+
+               CP    127           ; if ascii >127 (F keys)
+               JP    P,spec_key
+
+               OUT   (port2),A
+               CP    12
+               JP    Z,s_delete
+               CP    13
+               JP    Z,samret
+
+               LD    HL,(samy)
+               RST   &28           ; prn_at
+               DB    AT
+               LD    A,E           ; Print ASCII char.
+               RST   &10
+
+               INC   H             ; x=x+1
+               LD    A,H
+               CP    41
+               JP    NZ,save_sx    ; sx<40
+               INC   L             ; sx>40
+               LD    A,L
+               CP    6
+               JP    Z,sam_scroll
+
+               LD    (samy),A
+               LD    A,1
+save_sx:       LD    (samx),A
+               JP    sam_kurzor
+
+;//////////////
+s_delete:      LD    A,(samx)
+               DEC   A
+               AND   A
+               JP    Z,s_del_up
+               LD    H,A
+               LD    (samx),A
+               LD    A,(samy)
+               LD    L,A
+               RST   &28
+               DB    AT
+               LD    A," "
+               RST   &10
+               JP    sam_kurzor
+s_del_up:      LD    A,(samy)
+               CP    1
+               JP    Z,sam_kurzor
+               DEC   A
+               LD    L,A
+               LD    H,40
+               LD    (samy),HL
+               JP    sam_kurzor
+;//////////////
+samret:        LD    A,(samy)
+               CP    5
+               JP    Z,sam_scroll
+               INC   A
+               LD    L,A
+               LD    H,1
+               LD    (samy),HL
+               JP    sam_kurzor
+;//////////////
+sam_kurzor:    LD    HL,(samy)
+               RST   &28
+               DB    AT
+               LD    A,4
+               RST   &10
+               LD    A,sam_kurz_asc
+               RST   &10
+               LD    A,4
+               RST   &10
+               RET
+;....................................... F8 key
+menu_:         LD    BC,&2F08
+               LD    DE,&0E03
+               LD    A,com_win
+               CALL  WIND1
+               CALL  TEXT
+               DB    22,9,49,1
+               DM    "EXPORT FILE"
+               DB    22,10,49,1
+               DM    "IMPORT FILE"
+               DB    22,11,49,1
+               DM    "VIEW TEXT"
+               DB    255
+               RST   &28
+               DB    BEEP
+mai_men_loop:  CALL  read_st
+               CALL  inkey2
+               AND   A
+               JP    Z,mai_men_loop
+               RST   &28
+               DB    TO.UPPER
+               CP    "V"
+               JP    Z,view_text
+               CP    "E"
+               JP    Z,posli
+               CP    "I"
+               JP    Z,get_file
+
+               XOR   A             ; Erase window
+               LD    BC,&2F08
+               LD    DE,&0E03
+               CALL  WIND1
+
+               LD    A,com_win
+               RST   &28
+               DB    COLOR
+               CALL  sam_kurzor
+
+               RET
+;..........................................
+tot_esc:       POP   HL
+               LD    HL,deactivated
+               CALL  message_2
+               RET
+;..........................................
+;=== Effects
+spec_key:      CP    200           ; F8 - menu
+               JP    Z,menu_
+               CP    199           ; F7
+               JP    Z,ringing
+               CP    201           ; F9
+               JP    Z,tot_esc
+               CP    198           ; F6
+               JP    Z,send_pockaj
+               CP    197           ; F5
+               JP    Z,send_message
+               CP    196           ; F4
+               JP    Z,game
+               RET                 ; if unknown key was pressed
+;..........................................
+
+;///////////////////////////////////////////////////////////////
+;////////// Read char from ST and show it //////////////////////
+;///////////////////////////////////////////////////////////////
+read_st:
+        ;       CALL  online_test
+
+               IN    A,(port)
+               LD    B,A
+               LD    A,(old_st)
+               CP    B             ; The same characters
+               RET   Z             ; **
+
+               LD    HL,(atariy)   ; Delete cursor
+               RST   &28
+               DB    AT
+               LD    A," "
+               RST   &10
+
+               LD    A,B
+               LD    (old_st),A    ;in A,B, (old_st) is act. character
+               CP    132
+               JP    Z,imp_req
+               CP    12
+               JP    Z,st_delete
+               CP    13
+               JP    Z,stret
+               CP    128           ; Same chars. (mark. byte)
+               RET   Z             ; **
+
+              ; LD    B,A           ; ASCII CODE is in B
+
+               LD    HL,(atariy)
+               RST   &28           ; prn_at
+               DB    AT
+
+          ;     LD    A,B           ; Print ASCII ; maybe out
+               RST   &10
+
+; New coordinates
+               INC   H
+               LD    A,H
+               CP    41
+               JP    NZ,save_stx   ; sx<40
+               INC   L             ; sx>40
+               LD    A,L
+               CP    14
+               JP    NZ,save_sty
+               JP    asrt_nscr
+save_sty:      LD    (atariy),A
+               LD    A,1
+save_stx:      LD    (atarix),A
+               JP    st_kurzor
+;//////////////
+st_delete:     LD    A,(atarix)
+               DEC   A
+               CP    0
+               JP    Z,st_del_up
+               LD    H,A
+               LD    A,(atariy)
+               LD    L,A
+               RST   &28
+               DB    AT
+               LD    A," "
+               RST   &10
+               LD    A,H
+               LD    (atarix),A
+               JP    st_kurzor
+st_del_up:     LD    A,(atariy)
+               CP    1
+               JP    Z,st_kurzor
+               DEC   A
+               LD    L,A           ; *
+               LD    H,40
+               LD    (atariy),HL
+               JP    st_kurzor
+;//////////////
+stret:         LD    A,(atariy)
+               CP    13
+               JP    Z,asrt_nscr
+               INC   A
+               LD    L,A
+               LD    H,1
+               LD    (atariy),HL   ; *
+               JP    st_kurzor
+;//////////////
+st_kurzor:     LD    HL,(atariy)
+               RST   &28
+               DB    AT
+               LD    A,4
+               RST   &10
+               LD    A,st_kurz_asc
+               RST   &10
+               LD    A,4
+               RST   &10
+               RET
+
+imp_req:       LD    HL,imp_txt
+               CALL  message_2
+               JP    start_import
+;///////////////////////////////////////////////////////////////
+;//////////////// Total odvec subrutiny ////////////////////////
+;///////////////////////////////////////////////////////////////
+sam_window:    LD    BC,0
+               LD    DE,&2805
+               LD    A,com_win
+               CALL  WIND1
+               RET
+;//////////////
+sam_scroll:    LD    BC,&0101
+               LD    DE,&2805
+               SCF
+               CALL  SCROLL.UP
+               LD    HL,&0105
+               LD    (samy),HL
+               JP    sam_kurzor
+;//////////////
+st_window:     LD    A,com_win
+               LD    BC,8
+               LD    DE,&2805
+               CALL  WIND1
+               RET
+;//////////////
+asrt_nscr:     LD    BC,&0109
+               LD    DE,&2805
+               SCF
+               CALL  SCROLL.UP
+               LD    HL,&010D
+               LD    (atariy),HL
+               JP    st_kurzor
+;//////////////
+ringing:       POP   HL
+               LD    HL,ring_mess
+               CALL  message_2
+               LD    A,(old_st)
+               LD    B,A
+ringloop:      CALL  pip
+
+               LD    DE,6000
+ri_pau:        PUSH  DE
+               CALL  tests
+               POP   DE
+               DEC   DE
+               LD    A,D
+               OR    E
+               JP    NZ,ri_pau
+               CALL  pip
+
+               LD    DE,6000
+ri_pau2:       PUSH  DE
+               CALL  tests
+               POP   DE
+               DEC   DE
+               LD    A,D
+               OR    E
+               JP    NZ,ri_pau2
+               CALL  pip
+
+               LD    DE,35000
+ri_pau3:       PUSH  DE
+               CALL  tests
+               POP   DE
+               DEC   DE
+               LD    A,D
+               OR    E
+               JP    NZ,ri_pau3
+
+               JP    ringloop
+endring:       POP   HL            ; Stack up test
+               POP   HL            ; Stack up show_sam
+               JP    start
+;.................................................
+tests:         IN    A,(port)       ; ST -> end
+               CP    B
+               JP    NZ,endring
+               XOR   A             ; Space -> end
+               IN    A,(254)
+               RRA
+               JP    NC,endring
+               RET
+;.................................................
+pip:           DI
+               LD    A,128
+               OUT   (254),A
+               LD    DE,10000      ; Tone length
+piploop:       LD    A,%10101010   ;
+               OUT   (port2),A
+               DS    40,0
+               DEC   DE            ; loop -> end
+               LD    A,D
+               OR    E
+               JP    NZ,piploop
+               OUT   (254),A       ; in A is 0
+               EI
+               RET
+
+;.................................................
+send_pockaj:   LD    HL,pockaj
+pock_loop:     LD    A,(HL)
+               CP    255
+               RET   Z
+
+               LD    (key_buffer),A
+;               XOR   A
+;               LD    (old_sam),A
+
+               PUSH  HL
+               CALL  show_sam
+
+               LD    BC,synchron2
+pock_pauza:    PUSH  BC
+               CALL  read_st
+               POP   BC
+               DEC   BC
+               LD    A,B
+               OR    C
+               JP    NZ,pock_pauza
+               POP   HL
+               INC   HL
+               JP    pock_loop
+
+pockaj:        DM    "   *****  Please Wait  *****"
+               DB    13,255
+
+send_message:  LD    A,30
+               LD    HL,&0007
+               CALL  INPUT
+
+               PUSH  HL
+               RST   &28
+               DB    BEEP
+               CALL  TEXT
+               DB    22,7,0,16,%11110000
+               DM    "                                "
+               DB    16,com_win
+               DB    255
+               POP   HL
+
+mess_loop2:    LD    B,30          ; message leng
+mess_loop:     LD    A,(HL)        ; write only A letter
+               LD    (key_buffer),A
+               PUSH  BC
+               PUSH  HL
+
+               LD    BC,synchron2
+mess_pauza:    PUSH  BC
+               CALL  read_st
+               POP   BC
+               DEC   BC
+               LD    A,B
+               OR    C
+               JP    NZ,mess_pauza
+               CALL  show_sam
+
+               XOR   A             ; if SPACE/RETURN
+               IN    A,(254)
+               RRA
+               JP    NC,end_mess
+
+               POP   HL
+               POP   BC
+               INC   HL
+               DJNZ  mess_loop
+
+               PUSH  HL            ; after every line cr
+               LD    A,13
+               LD    (key_buffer),A
+               CALL  show_sam
+               POP   HL
+
+               LD    BC,29         ; hl=hl-29
+               SBC   HL,BC
+
+               JP    mess_loop2
+
+end_mess:      XOR   A             ; return to main_loop
+               OUT   (254),A
+               POP   HL            ; stack up
+               POP   HL            ; stack up
+               RET
+
+online_test:
+               LD    A,(online_loop)   ;
+               DEC   A                 ;
+               LD    (online_loop),A   ;
+               JP    NZ,onlpokr        ; if isn't time yet
+                                       ;
+               DEC   A                 ; A=255
+               LD    (online_loop),A   ;
+               LD    A,(last_online)   ;
+               CP    133               ;
+               JP    Z,onl4            ;
+               DEC   A                 ;
+               LD    (last_online),A   ;  FOR ATARI (SAM ONLINE)
+               OUT   (port2),A         ;
+               JP    onlpokr           ;
+                                       ;
+onl4:          INC   A                 ;
+               LD    (last_online),A   ;
+               OUT   (port2),A
+                                       ;
+onlpokr:       IN    A,(port)
+               CP    133
+               JP    Z,online
+               CP    134
+               JP    NZ,offline
+
+online:        OUT   (port2),A       ; Send onl byte
+               LD    A,online_time   ; reset online test
+               LD    (online_num),A
+
+               LD    A,(online_act)
+               JP    NZ,back_to_rst    ; If it was 1 = online
+
+               LD    A,16
+               RST   &10
+               LD    A,240
+               RST   &10
+               LD    DE,&0C07
+               LD    A,10
+               RST   &28
+               DB    SEMI
+               LD    A,16
+               RST   &10
+               LD    A,com_win
+               RST   &10
+
+               LD    A,1
+               LD    (online_act),A
+
+back_to_rst:   POP   HL            ; stack up call from read_st
+               RET
+
+offline:       LD    A,(online_num)
+               DEC   A
+               LD    (online_num),A
+               JP    Z,offline2    ; if time out
+               RET                 ; else back to read st
+
+offline2:      LD    A,(online_act)
+               AND   A
+               RET   Z             ; If it was offline
+
+               LD    A,16
+               RST   &10
+               LD    A,240
+               RST   &10
+               LD    DE,&0C07
+               LD    A,11
+               RST   &28
+               DB    SEMI
+               LD    A,16
+               RST   &10
+               LD    A,com_win
+               RST   &10
+
+               XOR   A
+               LD    (online_act),A
+               RET                 ; back to read st
+
+;///////////////////////////////////////////////////////////////
+;///////////// DATA FOR KANVICA ... ////////////////////////////
+;///////////////////////////////////////////////////////////////
+samy:          DB    0
+samx:          DB    0
+atariy:        DB    0
+atarix:        DB    0
+old_st:        DB    149
+old_sam:       DB    0
+key_buffer:    DB    0
+online_num:    DB    255
+online_act:    DB    0
+online_loop:   DB    255
+last_online:   DB    133
+online_time:   EQU   255
+
+;***************************************************************
+;************ INKEY RUTINA *************************************
+;***************************************************************
+inkey2:        XOR   A
+               CALL  CALLROM
+               DW    &16C          ; char is in A
+               LD    (key_buffer),A
+               RET   NC
+               XOR   A
+               RET
+
+;***************************************************************
+;************ VIEW RUTINA **************************************
+;***************************************************************
+view_text:     LD    A,240         ; Set colors
+               RST   &28
+               DB    COLOR
+               XOR   A
+               LD    (BORDER),A
+               RST   &28
+               DB    CLS
+               LD    A,1
+               LD    (act_page),A  ; page
+               OUT   (251),A
+               LD    H,-1          ; SAVE pos.
+               LD    L,0
+               LD    (samy),HL
+
+               LD    HL,32768      ; adress
+view_loop1:    LD    A,(HL)        ; Get char, print it, inc adr
+               CP    0
+               JP    Z,end_of_view
+
+               PUSH  HL
+               PUSH  AF
+               LD    HL,(samy)     ; nacitaj suradnice
+               LD    A,H
+               CP    63
+               JP    NZ,make_posit
+               LD    H,-1
+               INC   L
+               LD    A,L
+               CP    14
+               JP    Z,nxt_pg
+make_posit:    INC   H
+               LD    (samy),HL
+               RST   &28
+               DB    AT
+               POP   AF
+               RST   &10
+               POP   HL
+               INC   HL
+
+               LD    DE,49152      ; If it need next (ram) page
+               SBC   HL,DE
+               JP    NC,next_rampage ; HL>DE
+               ADD   HL,DE
+               JP    view_loop1
+
+nxt_pg:
+               CALL  ASCII
+               CP    "q"
+               JP    Z,end_of_view ; If was pressed Q - quit
+
+               RST   &28           ; Else Clear Screen
+               DB    CLS
+               LD    L,0
+               LD    H,-1
+               JP    make_posit    ; And continue with printing
+
+next_rampage:  LD    A,(act_page)  ; inc page
+               INC   A
+               CP    32
+               JP    Z,end_of_view ; if it is bigger as halfmeg
+               OUT   (251),A       ; toggle page
+               LD    (act_page),A  ; save page number
+               LD    HL,32768      ; set adress
+               JP    view_loop1
+end_of_view:
+               CALL  ASCII
+               POP   HL
+               JP    start
+;**************************************************************
+;******************************* GAME *************************
+;**************************************************************
+game:          POP   HL            ; stack up show_sam
+               LD    A,240         ; Draw window
+               LD    BC,&2906
+               LD    DE,&1507
+               RST   &28
+               DB    RAMEC0
+               LD    HL,&310D      ; Start pos
+               LD    (gxy),HL
+               LD    HL,&320C
+               LD    (bxy),HL
+               LD    HL,(bxy)      ; Draw ball
+               RST   &28
+               DB    AT
+               LD    A,"*"
+               RST   &10
+               CALL  palka
+game_loop:     CALL  pohyb
+               CALL  lopticka
+               CALL  pohyb
+               JP    game_loop
+;..................................
+pohyb:         LD    HL,2000
+game_pause:    LD    (odlozhl),HL
+               CALL  read_st
+               LD    HL,(odlozhl)
+               DEC   HL
+               LD    A,H
+               OR    L
+               JP    NZ,game_pause
+               RST   &28
+               DB    JOYSTICK
+               RET   Z             ; nothing was pressed
+               PUSH  AF
+               RST   &28
+               DB    PUK
+               POP   AF
+               BIT   0,A
+               JP    Z,left
+               LD    HL,(gxy)      ; right
+               LD    A,H
+               CP    gmax-1
+               RET   Z
+               RST   &28
+               DB    AT
+               LD    A," "
+               RST   &10
+               LD    HL,(gxy)      ; roll it rigth
+               INC   H
+               LD    (gxy),HL
+               CALL  palka
+               RET
+left:          BIT   1,A
+               JP    Z,fire
+               LD    HL,(gxy)      ; left
+               LD    A,H
+               CP    gmin
+               RET   Z
+               INC   H
+               INC   H
+               RST   &28
+               DB    AT
+               LD    A," "
+               RST   &10
+               LD    HL,(gxy)      ; roll it left
+               DEC   H
+               LD    (gxy),HL
+               CALL  palka
+               RET
+fire:          POP   HL
+               JP    start
+;..................................
+palka:         RST   &28
+               DB    AT
+               LD    A,"O"
+               RST   &10
+               LD    HL,(gxy)
+               INC   H
+               RST   &28
+               DB    AT
+               LD    A,"O"
+               RST   &10
+               LD    HL,(gxy)
+               INC   H
+               INC   H
+               RST   &28
+               DB    AT
+               LD    A,"O"
+               RST   &10
+               RET
+;..................................
+lopticka:      LD    HL,(bxy)      ; Delete ball
+               RST   &28
+               DB    AT
+               LD    A," "
+               RST   &10
+               LD    HL,(bxy)
+               LD    A,(sx)
+               CP    1
+               JP    Z,incx        ; x=x+1
+               LD    A,H           ; x=x-1
+               CP    gmin
+               JP    Z,xisout      ; if x=min
+               DEC   H             ;  else x=x-1
+               LD    (bxy),HL
+               JP    test_y
+incx:          LD    A,H
+               CP    gmax
+               JP    Z,xisout      ; if x=max
+               INC   H             ; else x=x+1
+               LD    (bxy),HL
+               JP    test_y
+xisout:        LD    A,(sx)
+               NEG
+               LD    (sx),A
+test_y:        LD    A,(sy)
+               CP    1
+               JP    Z,incy        ; y=y+1
+               LD    A,L           ; y=y-1
+               CP    gymin
+               JP    Z,yisout      ; if y=min
+               DEC   L             ;  else y=Y-1
+               LD    (bxy),HL
+               JP    end_test
+incy:          LD    A,L
+               CP    gymax
+               JP    Z,yisout      ; if y=max
+; It need test of pos palky
+               CP    gymax-1
+               JP    NZ,normal
+               LD    A,(gxy+1)
+               CP    H
+               JP    Z,bod
+               INC   A
+               CP    H
+               JP    Z,bod
+               INC   A
+               CP    H
+               JP    NZ,normal     ;                  _
+bod:           LD    A,(score)     ; score=score+1, y=y
+               INC   A
+               LD    (score),A
+               PUSH  AF
+               LD    HL,&0101      ; print new score
+               RST   &28
+               DB    AT
+               POP   AF
+               RST   &28
+               DB    DIG3
+               JP    yisout
+normal:        INC   L             ; else y=y+1
+               LD    (bxy),HL
+               JP    end_test
+yisout:        LD    A,(sy)
+               NEG
+               LD    (sy),A
+end_test:      LD    HL,(gxy)
+               CALL  palka
+               LD    HL,(bxy)      ; Draw ball
+               RST   &28
+               DB    AT
+               LD    A,"*"
+               RST   &10
+               RET
+
+gxy:           DW    &2A0D
+bxy:           DW    0
+sx:            DB    1
+sy:            DB    255
+gmax:          EQU   61
+gmin:          EQU   42
+gymin:         EQU   7
+gymax:         EQU   13
+odlozhl:       DW    0
+score:         DB    0
+;***************************************************************
+;*********************    DATA RECIEVING    ********************
+;********* Znackove bajty: 131 START BYTE     ******************
+;*********                 130 END BYTE       ******************
+;*********                 128 LOWER BYTE     ******************
+;*********                 129 HIGHER BYTE    ******************
+;***************************************************************
+get_file:      RST   &28
+               DB    MODE4
+
+               IN    A,(252)       ; Unblock MIDI
+               RES   7,A
+               OUT   (252),A
+
+               EI
+               HALT
+;               DI
+
+               LD    BC,&0305
+               LD    DE,&1805
+               LD    A,%11110001
+               CALL  WIND1
+
+               CALL  TEXT
+               DB    22,6,4
+               DM    "1.IMPORT FILE"
+               DB    22,7,4
+               DM    "2.SAVE FILE"
+               DB    22,8,4
+               DM    "3.FILE NAME:"
+               DB    22,9,4
+               DM    "FILE LENGTH:"
+               DB    22,10,4
+               DM    "FILE LENG 2:"
+               DB    255
+
+               LD    A,(file_leng+1)
+               LD    H,A
+               LD    A,(file_leng+2)
+               LD    L,A
+               LD    A,(file_leng)
+
+               RST   &28
+               DB    NUM24
+
+               LD    HL,&1009
+               RST   &28
+               DB    AT
+               LD    HL,pages2
+               CALL  NUMBER
+
+               LD    HL,&1008      ; file name
+               RST   &28
+               DB    AT
+               LD    HL,file_name
+               CALL  STRING
+
+               LD    BC,0
+               LD    DE,&1E01
+               LD    A,%00001111
+               CALL  WIND2
+
+               LD    BC,&000D
+               LD    DE,&1E01
+               LD    A,%11110100
+               CALL  WIND1
+
+               CALL  TEXT
+               DB    22,1,1,16,%00011111
+               DM    "    SAM "
+               DB    16,%00101111
+               DM    "coup"
+               DB    148
+               DM    " MIDI receiver"
+               DB    22,14,1,16,%11110100
+               DM    "STATUS: ALL RIGHT"
+               DB    255
+
+               CALL  ASCII
+               CP    "1"
+               JP    Z,get_zac
+               CP    "2"
+               JP    Z,save_file
+
+               POP   HL
+               JP    start
+
+get_zac:       CALL  TEXT
+               DB    22,14,9,16,%11110100
+               DM    "RECEIVING..."
+               DB    255
+
+               RST   &28
+               DB    BEEP
+
+sttxt:         IN    A,(port)      ; wait name
+               CP    132
+               JP    Z,start_import
+               XOR   A
+               IN    A,(254)
+               RRA
+               JP    C,sttxt
+               JP    exit          ; if key
+
+start_import:  IN    A,(251)       ; Save old hmpr
+               LD    (oldhmpr_r),A
+               LD    A,1           ; Turn first page...
+               OUT   (251),A
+
+               XOR   A             ; Delete old values
+               LD    (pages),A
+               LD    (pages2),A
+               LD    HL,0
+               LD    (bytes),HL
+               LD    (bytes2),HL
+
+;///////////////////////////////////////////////////////////////
+;/////////////// IMPORT FILE NAME AND FILE LENGTH //////////////
+;///////////////////////////////////////////////////////////////
+wait_no132:    IN    A,(port)      ; Wait for no 132
+               CP    132
+               JP    NZ,no132
+               XOR   A
+               IN    A,(254)
+               RRA
+               JP    C,wait_no132
+               JP    exit          ; key
+
+no132:         LD    B,12          ; import 12 bytes name
+               LD    HL,file_name
+imp_name:      CALL  import_byte
+               LD    (HL),A
+               INC   HL
+               DJNZ  imp_name
+
+               LD    A,255         ; Finish name
+               LD    (HL),A
+               INC   HL
+
+               CALL  import_byte   ; zbyt. byte
+
+               LD    B,3           ; Nacitaj dlzku
+inp_leng:      CALL  import_byte
+               LD    (HL),A
+               INC   HL
+               DJNZ  inp_leng
+
+;///////////////////////////////////////////////////////////////
+;/////////////// IMPORT BLOCK OF DATA //////////////////////////
+;///////////////////////////////////////////////////////////////
+               LD    HL,32768      ; start ADRESS!!!
+
+wait_st:       IN    A,(port)      ; Wait for 131
+               CP    131
+               JP    Z,dostal_st   ; MIDI IN=131
+               XOR   A
+               IN    A,(254)
+               RRC   A
+               JP    C,wait_st     ; if no SPACE
+
+               LD    A,(oldhmpr_r) ; if SPACE turn old page and
+               OUT   (251),A       ;
+               JP    get_navrat    ; exit
+
+; Ak je midicko nulovane:
+dostal_st:
+cak_zn:        IN    A,(port)
+               BIT   7,A
+               JP    Z,cak_zn      ; bit 7=0 then loop
+; uz ju ma
+               CP    131           ; start
+               JP    Z,cak_zn
+               CP    128           ; byte<128
+               JP    Z,lower_r
+               CP    129           ; byte=>128
+               JP    Z,biger_r
+               CP    130           ; end_byte
+               JP    Z,exit
+
+; sem by sa nemal dostat...
+               PUSH  AF
+               LD    A,0           ; Reset BORDER
+               OUT   (254),A
+               POP   AF
+
+               PUSH  AF
+               XOR   A
+               OUT   (254),A
+               CALL  TEXT
+               DB    22,0,0
+               DM    "SYSTEM ERROR - UNKNOW CODE:"
+               DB    255
+               POP   AF
+               LD    (30005),A
+               RST   &28
+               DB    DIG3
+               JP    exit
+;---------------------------------------------------------------
+lower_r:       IN    A,(port)       ;
+               CP    128           ; Wait, until midi<>128
+               JP    Z,lower_r     ;
+;bajt v A
+               LD    (HL),A        ; Save byte and inc adr.
+               AND   %00001111
+               OUT   (254),A       ; *
+               JP    zvys_adresu
+;---------------------------------------------------------------
+biger_r:       IN    A,(port)       ;
+               CP    129           ; Wait, until midi<>129
+               JP    Z,biger_r     ;
+;bajt v A
+               SET   7,A           ; Add 128 to byte
+               LD    (HL),A        ; Save byte and inc adr.
+               AND   %00001111
+               OUT   (254),A       ; *
+;--------------------------------------------------------------
+zvys_adresu:   INC   HL
+               BIT   6,H            ; If hl<49152 then loop
+               JP    Z,cak_zn       ;
+
+               LD    A,(act_page_r) ; if hl>49152
+               INC   A              ;   page=page+1
+               LD    (act_page_r),A ;   out page to hmpr
+               OUT   (251),A        ;
+               LD    HL,32768       ;   adr=32768
+               JP    cak_zn         ;   loop
+                                    ; end if
+;--------------------------------------------------------------
+exit:          XOR   A
+               OUT   (254),A
+               LD    A,(oldhmpr_r)  ; To old posit.
+               OUT   (251),A        ;
+               LD    A,(act_page_r) ;
+               DEC   A              ; To adr pages save no. of pages
+               LD    (pages2),A     ;
+               SET   7,H
+               LD    (bytes2),HL    ; To adr offset save adr.
+               JP    get_file
+;//////////////
+get_navrat:    POP   HL
+               JP    start
+;//////////////
+save_file:
+               CALL  TEXT
+               DB    22,14,1
+               DM    "NAME:               "
+               DB    255
+               LD    A,10
+               LD    H,7
+               LD    L,14
+               CALL  INPUT
+               LD    A,(pages2)
+               LD    B,A
+               LD    IX,(bytes2)
+               LD    A,19
+               LD    C,1
+               LD    DE,32768
+               CALL  SAVE
+               JP    get_navrat
+
+oldhmpr_r:     DB    0
+act_page_r:    DB    1
+
+;***************************************************************
+;***********************   SEND FILE   *************************
+;***   Znackove bajty: 128             *************************
+;***                   129             *************************
+;***                   130             *************************
+;***                   131             *************************
+;***************************************************************
+posli:         RST   &28
+               DB    MODE4
+
+               IN    A,(252)       ; Unbock MIDI
+               RES   7,A
+               OUT   (252),A
+
+               LD    A,15
+               LD    BC,0
+               LD    DE,&1E01
+               CALL  WIND2
+               CALL  TEXT
+               DB    22,1,1,15
+               DM    "  SAM"
+               DB    16,%00101111
+               DM    " coup"
+               DB    148
+               DB    16,15
+               DM    " MIDI file sendig"
+               DB    255
+
+               LD    A,%11110001
+               LD    BC,&0304
+               LD    DE,&1604
+               CALL  WIND1
+               CALL  TEXT
+               DB    22,5,4,1
+               DM    "Load file"
+               DB    22,6,4,1
+               DM    "Send file"
+               DB    22,7,4
+               DM    "Length:        bytes"
+               DB    22,8,4
+               DM    "Name:"
+               DB    255
+
+               LD    HL,&0C07
+               RST   &28
+               DB    AT
+               LD    A,(pages2)
+               LD    HL,(bytes2)
+               RST   &28
+               DB    NUM2
+
+               LD    A,%11110100
+               LD    BC,&000D
+               LD    DE,&1E01
+               CALL  WIND1
+               CALL  TEXT
+               DB    22,14,1
+               DM    "STATUS: ALL RIGHT"
+               DB    255
+
+               CALL  ASCII
+               RST   &28
+               DB    TO.UPPER
+               CP    "L"
+               JP    Z,load_file
+               CP    "S"
+               JP    Z,send_file
+               POP   HL
+               JP    start
+;///////////////////////////////////////////////////////////////
+;//////// LOAD FILE FROM DISK - TO SEND TO MIDI ////////////////
+;///////////////////////////////////////////////////////////////
+load_file:     CALL  TEXT
+               DB    22,14,1
+               DM    "NAME:               "
+               DB    255
+
+               LD    DE,&0001      ; had FAT 4 tracks ?
+               LD    HL,volne_FAT
+               CALL  READTO
+               JP    C,posli
+               LD    A,(volne_FAT+255)
+               AND   A
+               JP    NZ,get_name   ; If no ...
+
+               LD    A,129         ; Load d.inf - max. 80 files!
+               CALL  DISK.INFO
+
+               LD    A,B           ; A=no. of files
+               DEC   A
+               LD    (file_max),A
+
+               XOR   A             ; first file
+               LD    (file_num),A
+
+show_loop:     PUSH  AF
+               LD    H,7
+               LD    L,14
+               RST   &28
+               DB    AT
+               POP   AF
+               PUSH  AF            ; Save pos.
+
+               CALL  POCIT
+               LD    (name_adr),HL
+               RST   &28           ; Show it's name
+               DB    NAME
+
+               RST   &28
+               DB    JOYSTICK
+               BIT   3,A
+               JP    NZ,file_down
+               BIT   2,A
+               JP    NZ,file_up
+               BIT   4,A
+               JP    NZ,file_ret
+
+               POP   AF
+               JP    show_loop
+
+file_up:       POP   AF            ; Stack up
+               RST   &28
+               DB    BEEP
+               LD    A,(file_max)
+               LD    B,A
+               LD    A,(file_num)
+               CP    B
+               JP    Z,show_loop
+               INC   A
+               LD    (file_num),A
+               JP    show_loop
+
+file_down:     POP   AF            ; Stack up
+               RST   &28
+               DB    BEEP
+               LD    A,(file_num)
+               CP    0
+               JP    Z,show_loop
+               DEC   A
+               LD    (file_num),A
+               JP    show_loop
+
+file_ret:      POP   AF            ; Stack up
+               LD    HL,(name_adr)
+               INC   HL            ; Name
+finfo:         LD    (name_adr),HL
+
+               LD    A,19
+               CALL  FILE.INFO
+               JP    NC,file_exist
+               CALL  TEXT
+               DB    22,14,1
+               DM    "STATUS: FILE NOT FOUND"
+               DB    255
+               CALL  ASCII
+               JP    posli
+
+file_exist:    LD    BC,14
+               ADD   HL,BC
+
+               LD    A,(HL)
+               LD    (pages),A
+               LD    (pages2),A
+               INC   HL
+
+               LD    A,(HL)
+               LD    (bytes),A
+               LD    (bytes2),A
+               INC   HL
+
+               LD    A,(HL)
+               RES   7,A
+               LD    (bytes+1),A
+               LD    (bytes2+1),A
+
+               LD    HL,(name_adr)
+               LD    C,1
+               LD    A,19
+               LD    DE,32768
+               CALL  LOAD.AT
+               JP    posli
+
+get_name:      LD    A,10          ; fname leng
+               LD    HL,&060E
+               CALL  INPUT
+               JP    Z,posli       ; If ESC
+               JP    finfo         ; load file
+
+;// FILE DATA //
+file_max:      DB    0
+file_num:      DB    0
+name_adr:      DW    0
+;///////////////
+
+;///////////////////////////////////////////////////////////////
+;/////   START COMMUNICATION   -   DEFINE PARAMETERS   /////////
+;///////////////////////////////////////////////////////////////
+send_file:     EI
+               IN    A,(251)       ; Save old hmpr
+               LD    (oldhmpr),A
+
+               LD    A,1           ; Start from page one
+               LD    (act_page),A
+;///////////////////////////////////////////////////////////////
+;///// SEND NAME (12 BYTES) , FILE LENGTH (4) BYTES ////////////
+;///////////////////////////////////////////////////////////////
+               LD    A,132         ; Send MARK byte for f. name
+               OUT   (port2),A
+               CALL  cakaj_2
+
+               LD    HL,(name_adr)
+               LD    B,10
+name_loop:     LD    A,(HL)        ; Send char.
+               CALL  send_byte
+               INC   HL
+               DJNZ  name_loop
+
+               XOR   A             ; Send one redund. byte
+               CALL  send_byte
+
+               LD    HL,(bytes)    ; Convert pag/off to 24 bit
+               LD    A,(pages)
+               RST   &28
+               DB    TO24
+
+               CALL  send_byte
+               LD    A,H
+               CALL  send_byte
+               LD    A,L
+               CALL  send_byte
+
+               LD    A,130         ; END OF NAME & LENGTH
+               OUT   (port2),A
+
+;///////////////////////////////////////////////////////////////
+;////// SEND BLOCK OF MEMORY TO MIDI ///////////////////////////
+;///////////////////////////////////////////////////////////////
+               LD    BC,16384      ; wait 1second
+               RST   &28
+               DB    CAKAJ
+
+;               LD    A,131         ; Send mark byte for start
+;               OUT   (port2),A
+
+; Beginning define parametters
+               LD    A,(act_page)  ; Turn right page! (1)
+               OUT   (251),A       ;
+
+               CALL  TEXT
+               DB    22,14,1
+               DM    "STATUS: SENDING DATA !!!"
+               DB    255
+
+               LD    BC,(bytes)    ; offset
+               PUSH  BC
+               LD    A,(pages)
+               LD    D,A           ; pages
+               IN    A,(251)
+               LD    (oldhmpr),A
+
+next_page:     LD    HL,32768      ; adr at start of page
+               LD    A,D
+               CP    0
+               JP    Z,body_loop0  ; jump if don't need page...
+; yet need page:
+               LD    A,(act_page)  ; Act. page to HMPR
+               OUT   (251),A       ;
+page_loop:     LD    E,(HL)        ; e=byte
+               BIT   7,E           ; byte=>128?
+               JP    NZ,p_biger    ; if byte>128 then goto biger
+; Byte <128  --------------------------------------------------
+               LD    A,128
+               OUT   (port2),A      ; Send mark byte
+               CALL  cakaj_1       ; Pause & live flag
+               LD    A,E
+               OUT   (port2),A      ; Send value byte
+               CALL  cakaj_1       ; Pause & live flag
+               JP    p_pokracuj    ; Jump to continue
+; byte =>128 --------------------------------------------------
+p_biger:       RES   7,E           ; byte=byte-128
+               LD    A,129
+               OUT   (port2),A       ; Send mark byte
+               CALL  cakaj_1       ; Pause & live flag
+               LD    A,E
+               OUT   (port2),A      ; Send value byte
+               CALL  cakaj_1       ; Pause & live flag
+; Inc adr/page-------------------------------------------------
+p_pokracuj:    INC   HL
+               BIT   6,H
+               JP    Z,page_loop   ; Jump if HL<49152
+
+               LD    A,(act_page)  ; Else increase actual HMPR
+               INC   A
+               LD    (act_page),A
+               DEC   D             ; Decrease remaining pages
+               JP    next_page
+; If it don't need send more pages:
+body_loop0:    POP   BC            ; If there was only pages
+               LD    A,B           ; to send and no any more
+               OR    C             ; bytes.
+               JP    Z,end_paglow
+               PUSH  BC
+               LD    A,(act_page)  ; Turn right page
+               OUT   (251),A
+body_loop:     LD    E,(HL)
+               BIT   7,E           ; byte=>128?
+               JP    NZ,biger      ; if byte>128 then goto biger
+; Byte <128  --------------------------------------------------
+               LD    A,128
+               OUT   (port2),A      ; Send mark byte
+               CALL  cakaj_1       ; Pause and live flag
+               LD    A,E
+               OUT   (port2),A      ; Send value byte
+               CALL  cakaj_1       ; Pause and live flag
+               JP    pokracuj      ; Jump to continue
+; byte =>128 --------------------------------------------------
+biger:         RES   7,E           ; byte=byte-128
+               LD    A,129         ; Send mark byte
+               OUT   (port2),A
+               CALL  cakaj_1       ; Pause and live flag
+               LD    A,E           ; Send value byte
+               OUT   (port2),A
+               CALL  cakaj_1       ; Pause and live flag
+; Inc adr...----------------------------------------------------
+pokracuj:      INC   HL
+
+               POP   BC
+               DEC   BC
+               PUSH  BC
+
+               LD    A,B
+               OR    C
+               JP    NZ,body_loop  ; bc<>0 then goto ..
+
+               POP   BC            ; stack up
+; End of file-------------------
+end_paglow:    LD    A,130         ; Send mark byte for end
+               OUT   (port2),A
+               XOR   A
+               OUT   (254),A
+               LD    A,(oldhmpr)   ; To old values
+               OUT   (251),A       ;
+               CALL  TEXT
+               DB    22,14,9
+               DM    "O.K. FILE SENDED."
+               DB    255
+               JP    posli
+;\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+;\\\\\\\\\\\\\\\\\\\ SMALL ROUTINES \\\\\\\\\\\\\\\\\\\\\\\\\\\\
+;\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+;///////////////////////////////////////////////////////////////
+;////////// KEYPRESS - WAIT FOR RETURN /////////////////////////
+;///////////////////////////////////////////////////////////////
+keypress:      XOR   A
+               IN    A,(254)
+               RRA
+               JP    C,keypress
+               RET
+;///////////////////////////////////////////////////////////////
+;///////// CAKAJ_1  - SYNCHRONIZATION PAUSE FOR ASM. ///////////
+;///////////////////////////////////////////////////////////////
+cakaj_1:       LD    A,(synchro_pauza)
+               LD    B,A
+               LD    A,E             ; Sended byte put to border
+               AND   15
+sp1_loop:      OUT   (254),A
+               DJNZ  sp1_loop
+               RET
+;///////////////////////////////////////////////////////////////
+;///////// CAKAJ_2  - LONG PAUSE - FOR BASIC ///////////////////
+;///////////////////////////////////////////////////////////////
+cakaj_2:       PUSH  BC
+               LD    BC,synchron3
+cak2_lop:      DEC   BC
+               LD    A,B
+               OR    C
+               JP    NZ,cak2_lop
+               POP   BC
+               RET
+;///////////////////////////////////////////////////////////////
+;////////////// SEND BYTE TO MIDI //////// 128,129 /////////////
+;///////////////////////////////////////////////////////////////
+send_byte:     PUSH  BC
+               PUSH  DE
+               LD    D,A           ; save byte
+               BIT   7,A
+               JP    NZ,vacsi
+               LD    A,128
+               OUT   (port2),A
+               CALL  cakaj_1
+               LD    A,D
+               OUT   (port2),A
+               CALL  cakaj_1
+               POP   DE
+               POP   BC
+               RET
+vacsi:         LD    A,129
+               OUT   (port2),A
+               CALL  cakaj_1
+               LD    A,D
+               OUT   (port2),A
+               CALL  cakaj_1
+               POP   DE
+               POP   BC
+               RET
+;///////////////////////////////////////////////////////////////
+;///////////////// GET BYTE FROM MIDI //////// 128,129 /////////
+;////////////////////////////////////////////////////////////////
+import_byte:   IN    A,(port)      ; wait for a mark byte
+               BIT   7,A
+               JP    Z,import_byte
+
+               CP    129
+               JP    Z,imp_high
+
+wait_low:      IN    A,(port)      ; wait data byte
+               BIT   7,A
+               JP    NZ,wait_low
+               RET
+
+imp_high:      IN    A,(port)      ; wait data byte
+               BIT   7,A
+               JP    NZ,imp_high
+               SET   7,A
+               RET                 ; DATA byte in a: return
+
+;/////////////////////// SEND MESSAGE 2 ////////////////////////
+;vstup : HL - adr. of txt - ukonceny 255
+message_2:     LD    A,(HL)
+               CP    255
+               RET   Z
+               LD    (key_buffer),A
+               PUSH  HL
+               CALL  show_sam
+               CALL  cakaj_2
+               CALL  read_st
+               POP   HL
+               INC   HL
+               JP    message_2
+;////////////////////////  TABULKY, DATA TEMPs, atd... /////////
+bytes:         DW    1             ; offset 0-16384
+pages:         DB    0             ; n*16384
+pages2:        DB    0
+bytes2:        DW    1             ; Show
+act_page:      DB    1
+oldhmpr:       DB    0
+
+synchro_pauza: DB    57
+synchron2:     EQU   1000
+synchron3:     EQU   1000
+uloz:          EQU   %00110011
+sam_kurz_asc:  EQU   "."
+st_kurz_asc:   EQU   ":"
+com_win:       EQU   %11110010
+port:          EQU   253           ; INPUT port
+port2:         EQU   253           ; OUTPUT port
+
+file_name:     DM    "-- NO NAME -"; Data pre fajl
+               DB    255
+file_leng:     DW    0
+               DB    0
+
+samonline:     DB    13
+               DM    "You are connected to:"
+               DB    13
+               DM    "            "
+               DB    13
+               DM    "              "
+               DB    13
+               DM    "          "
+               DB    13
+               DM    "                "
+               DB    13
+               DM    "                "
+               DB    255
+
+ring_mess:     DB    13,4
+               DM    "RINGING FOR ATARI CONNECION!!!"
+               DB    4,255
+
+imp_txt:       DB    13,4
+               DM    "IMPORT REQUESTED - WAIT."
+               DB    4,255
+
+deactivated:   DB    13,4
+               DM    "KNV is deactivated."
+               DB    4,255
+
+               INC   "resource.z"
+volne_FAT:
+
+
