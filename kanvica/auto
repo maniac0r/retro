@@ -1,0 +1,10 @@
+   10 POKE DVAR 1,80+128
+   20 MODE 3: CLS #
+   30 INPUT "KNV? <y/{20}{1}N{20}{0}>";a$: IF a$="Y"  OR a$="y": IF PEEK 540000 <> 255 THEN LOAD "transf.bin" CODE : POKE 540000,255: POKE &5c09,10,1
+   40 MODE 3: CALL &7003c: CLS : GO TO 30: END IF 
+   50 INPUT "page?(28) "; LINE p$: IF p$="": LET p$="28": END IF : LET p= VAL p$: IF p=0 THEN GO TO 90
+   60 MODE 4: CLS : PRINT "SV to page : ";p;" - ";p+1: PRINT "CALL: "; HEX$ (p*16384+&3c)
+   70 LOAD "sv30" CODE p*16384
+   80 CALL p*16384+&3c
+   90 LOAD "zeus" 
+  100  
