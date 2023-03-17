@@ -6,3 +6,5 @@ kanvica-z80-v4.transf.bin is the compiled version (not sure if v57, or other tho
 
 For full functionality counterpart code is required for the Atari.
 
+screenshot:
+![knv](https://github.com/maniac0r/retro/blob/main/kanvica/kanvica.gif?raw=true)
